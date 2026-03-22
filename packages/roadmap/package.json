@@ -1,0 +1,52 @@
+{
+  "name": "@magii/roadmap",
+  "version": "0.3.0",
+  "description": "Magii / Roadmap",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "NODE_ENV=development MIDWAY_SERVER_ENV=local midway-bin dev --ts",
+    "build": "midway-bin build --clean",
+    "start": "NODE_ENV=production MIDWAY_SERVER_ENV=prd node ./bootstrap.js"
+  },
+  "dependencies": {
+    "@midwayjs/async-hooks-context-manager": "3.18.0",
+    "@midwayjs/bootstrap": "3.18.2",
+    "@midwayjs/core": "3.18.0",
+    "@midwayjs/event-bus": "1.9.4",
+    "@midwayjs/i18n": "3.18.2",
+    "@midwayjs/info": "3.18.2",
+    "@midwayjs/koa": "3.18.2",
+    "@midwayjs/logger": "3.1.4",
+    "@midwayjs/session": "3.18.2",
+    "@midwayjs/static-file": "3.18.2",
+    "@midwayjs/validate": "3.18.2",
+    "@midwayjs/version": "3.18.2",
+    "@midwayjs/view": "3.18.2",
+    "@midwayjs/view-nunjucks": "3.18.2",
+    "midway-web-starter": "0.6.1"
+  },
+  "devDependencies": {
+    "@midwayjs/cli": "2.0.15",
+    "@midwayjs/cli-plugin-build": "2.0.14",
+    "@midwayjs/cli-plugin-check": "2.0.14",
+    "@midwayjs/cli-plugin-clean": "2.0.14",
+    "@midwayjs/cli-plugin-dev": "2.0.15",
+    "@midwayjs/cli-plugin-faas": "2.0.15",
+    "@midwayjs/cli-plugin-test": "2.0.14",
+    "@midwayjs/command-core": "2.0.14",
+    "@midwayjs/fcli-plugin-deploy": "2.0.14",
+    "@midwayjs/fcli-plugin-fc": "2.0.15",
+    "@midwayjs/fcli-plugin-package": "2.0.15",
+    "@midwayjs/mock": "3.18.2",
+    "@midwayjs/serverless-spec-builder": "2.0.14",
+    "@types/node": "20.19.9",
+    "typescript": "5.1.6"
+  },
+  "application": {
+    "name": "roadmap",
+    "port": 8080
+  }
+}

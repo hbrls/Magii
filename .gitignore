@@ -1,5 +1,14 @@
 .DS_Store
+
 node_modules/
-.dist/
+logs/
 
 .workspace
+
+config.local.ts
+
+# web-starter
+.dist/
+packages/*/public/rsrc/dist/
+packages/*/public/rsrc/dist-*/
+packages/*/view/umi-*.html
