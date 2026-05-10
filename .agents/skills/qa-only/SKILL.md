@@ -1,21 +1,19 @@
 ---
-name: document-release
-preamble-tier: 2
+name: qa-only
+preamble-tier: 4
 version: 1.0.0
 description: |
-  Post-ship documentation update. Reads all project docs, cross-references the
-  diff, updates README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md to match what shipped,
-  polishes CHANGELOG voice, cleans up TODOS, and optionally bumps VERSION. Use when
-  asked to "update the docs", "sync documentation", or "post-ship docs".
-  Proactively suggest after a PR is merged or code is shipped. (gstack)
+  Report-only QA testing. Systematically tests a web application and produces a
+  structured report with health score, screenshots, and repro steps — but never
+  fixes anything. Use when asked to "just report bugs", "qa report only", or
+  "test but don't fix". For the full test-fix-verify loop, use /qa instead.
+  Proactively suggest when the user wants a bug report without any code changes. (gstack)
 allowed-tools:
   - Bash
   - Read
   - Write
-  - Edit
-  - Grep
-  - Glob
   - AskUserQuestion
+  - WebSearch
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
@@ -51,7 +49,7 @@ echo "TELEMETRY: ${_TEL:-off}"
 echo "TEL_PROMPTED: $_TEL_PROMPTED"
 mkdir -p ~/.gstack/analytics
 if [ "${_TEL:-off}" != "off" ]; then
-  echo '{"skill":"document-release","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+  echo '{"skill":"qa-only","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
 fi
 # zsh-compatible: use find instead of glob to avoid NOMATCH error
 for _PF in $(find ~/.gstack/analytics -maxdepth 1 -name '.pending-*' 2>/dev/null); do
@@ -277,6 +275,24 @@ AI makes completeness near-free. Always recommend the complete option over short
 
 Include `Completeness: X/10` for each option (10=all edge cases, 7=happy path, 3=shortcut).
 
+## Repo Ownership — See Something, Say Something
+
+`REPO_MODE` controls how to handle issues outside your branch:
+- **`solo`** — You own everything. Investigate and offer to fix proactively.
+- **`collaborative`** / **`unknown`** — Flag via AskUserQuestion, don't fix (may be someone else's).
+
+Always flag anything that looks wrong — one sentence, what you noticed and its impact.
+
+## Search Before Building
+
+Before building anything unfamiliar, **search first.** See `~/.claude/skills/gstack/ETHOS.md`.
+- **Layer 1** (tried and true) — don't reinvent. **Layer 2** (new and popular) — scrutinize. **Layer 3** (first principles) — prize above all.
+
+**Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
+```bash
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+```
+
 ## Contributor Mode
 
 If `_CONTRIB` is `true`: you are in **contributor mode**. At the end of each major workflow step, rate your gstack experience 0-10. If not a 10 and there's an actionable bug or improvement — file a field report.
@@ -406,392 +422,396 @@ Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-## Step 0: Detect platform and base branch
+# /qa-only: Report-Only QA Testing
 
-First, detect the git hosting platform from the remote URL:
+You are a QA engineer. Test web applications like a real user — click everything, fill every form, check every state. Produce a structured report with evidence. **NEVER fix anything.**
+
+## Setup
+
+**Parse the user's request for these parameters:**
+
+| Parameter | Default | Override example |
+|-----------|---------|-----------------:|
+| Target URL | (auto-detect or required) | `https://myapp.com`, `http://localhost:3000` |
+| Mode | full | `--quick`, `--regression .gstack/qa-reports/baseline.json` |
+| Output dir | `.gstack/qa-reports/` | `Output to /tmp/qa` |
+| Scope | Full app (or diff-scoped) | `Focus on the billing page` |
+| Auth | None | `Sign in to user@example.com`, `Import cookies from cookies.json` |
+
+**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
+
+**Find the browse binary:**
+
+## SETUP (run this check BEFORE any browse command)
 
 ```bash
-git remote get-url origin 2>/dev/null
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+B=""
+[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
+[ -z "$B" ] && B=~/.claude/skills/gstack/browse/dist/browse
+if [ -x "$B" ]; then
+  echo "READY: $B"
+else
+  echo "NEEDS_SETUP"
+fi
 ```
 
-- If the URL contains "github.com" → platform is **GitHub**
-- If the URL contains "gitlab" → platform is **GitLab**
-- Otherwise, check CLI availability:
-  - `gh auth status 2>/dev/null` succeeds → platform is **GitHub** (covers GitHub Enterprise)
-  - `glab auth status 2>/dev/null` succeeds → platform is **GitLab** (covers self-hosted)
-  - Neither → **unknown** (use git-native commands only)
+If `NEEDS_SETUP`:
+1. Tell the user: "gstack browse needs a one-time build (~10 seconds). OK to proceed?" Then STOP and wait.
+2. Run: `cd <SKILL_DIR> && ./setup`
+3. If `bun` is not installed:
+   ```bash
+   if ! command -v bun >/dev/null 2>&1; then
+     BUN_VERSION="1.3.10"
+     BUN_INSTALL_SHA="bab8acfb046aac8c72407bdcce903957665d655d7acaa3e11c7c4616beae68dd"
+     tmpfile=$(mktemp)
+     curl -fsSL "https://bun.sh/install" -o "$tmpfile"
+     actual_sha=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
+     if [ "$actual_sha" != "$BUN_INSTALL_SHA" ]; then
+       echo "ERROR: bun install script checksum mismatch" >&2
+       echo "  expected: $BUN_INSTALL_SHA" >&2
+       echo "  got:      $actual_sha" >&2
+       rm "$tmpfile"; exit 1
+     fi
+     BUN_VERSION="$BUN_VERSION" bash "$tmpfile"
+     rm "$tmpfile"
+   fi
+   ```
 
-Determine which branch this PR/MR targets, or the repo's default branch if no
-PR/MR exists. Use the result as "the base branch" in all subsequent steps.
+**Create output directories:**
 
-**If GitHub:**
-1. `gh pr view --json baseRefName -q .baseRefName` — if succeeds, use it
-2. `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` — if succeeds, use it
-
-**If GitLab:**
-1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
-2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
-
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
-
-Print the detected base branch name. In every subsequent `git diff`, `git log`,
-`git fetch`, `git merge`, and PR/MR creation command, substitute the detected
-branch name wherever the instructions say "the base branch" or `<default>`.
+```bash
+REPORT_DIR=".gstack/qa-reports"
+mkdir -p "$REPORT_DIR/screenshots"
+```
 
 ---
 
-# Document Release: Post-Ship Documentation Update
+## Test Plan Context
 
-You are running the `/document-release` workflow. This runs **after `/ship`** (code committed, PR
-exists or about to exist) but **before the PR merges**. Your job: ensure every documentation file
-in the project is accurate, up to date, and written in a friendly, user-forward voice.
+Before falling back to git diff heuristics, check for richer test plan sources:
 
-You are mostly automated. Make obvious factual updates directly. Stop and ask only for risky or
-subjective decisions.
-
-**Only stop for:**
-- Risky/questionable doc changes (narrative, philosophy, security, removals, large rewrites)
-- VERSION bump decision (if not already bumped)
-- New TODOS items to add
-- Cross-doc contradictions that are narrative (not factual)
-
-**Never stop for:**
-- Factual corrections clearly from the diff
-- Adding items to tables/lists
-- Updating paths, counts, version numbers
-- Fixing stale cross-references
-- CHANGELOG voice polish (minor wording adjustments)
-- Marking TODOS complete
-- Cross-doc factual inconsistencies (e.g., version number mismatch)
-
-**NEVER do:**
-- Overwrite, replace, or regenerate CHANGELOG entries — polish wording only, preserve all content
-- Bump VERSION without asking — always use AskUserQuestion for version changes
-- Use `Write` tool on CHANGELOG.md — always use `Edit` with exact `old_string` matches
+1. **Project-scoped test plans:** Check `~/.gstack/projects/` for recent `*-test-plan-*.md` files for this repo
+   ```bash
+   setopt +o nomatch 2>/dev/null || true  # zsh compat
+   eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+   ls -t ~/.gstack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ```
+2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
+3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
 
 ---
 
-## Step 1: Pre-flight & Diff Analysis
+## Modes
 
-1. Check the current branch. If on the base branch, **abort**: "You're on the base branch. Run from a feature branch."
+### Diff-aware (automatic when on a feature branch with no URL)
 
-2. Gather context about what changed:
+This is the **primary mode** for developers verifying their work. When the user says `/qa` without a URL and the repo is on a feature branch, automatically:
 
-```bash
-git diff <base>...HEAD --stat
-```
+1. **Analyze the branch diff** to understand what changed:
+   ```bash
+   git diff main...HEAD --name-only
+   git log main..HEAD --oneline
+   ```
 
-```bash
-git log <base>..HEAD --oneline
-```
+2. **Identify affected pages/routes** from the changed files:
+   - Controller/route files → which URL paths they serve
+   - View/template/component files → which pages render them
+   - Model/service files → which pages use those models (check controllers that reference them)
+   - CSS/style files → which pages include those stylesheets
+   - API endpoints → test them directly with `$B js "await fetch('/api/...')"`
+   - Static pages (markdown, HTML) → navigate to them directly
 
-```bash
-git diff <base>...HEAD --name-only
-```
+   **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
 
-3. Discover all documentation files in the repo:
+3. **Detect the running app** — check common local dev ports:
+   ```bash
+   $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
+   $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
+   $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
+   ```
+   If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
 
-```bash
-find . -maxdepth 2 -name "*.md" -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.gstack/*" -not -path "./.context/*" | sort
-```
+4. **Test each affected page/route:**
+   - Navigate to the page
+   - Take a screenshot
+   - Check console for errors
+   - If the change was interactive (forms, buttons, flows), test the interaction end-to-end
+   - Use `snapshot -D` before and after actions to verify the change had the expected effect
 
-4. Classify the changes into categories relevant to documentation:
-   - **New features** — new files, new commands, new skills, new capabilities
-   - **Changed behavior** — modified services, updated APIs, config changes
-   - **Removed functionality** — deleted files, removed commands
-   - **Infrastructure** — build system, test infrastructure, CI
+5. **Cross-reference with commit messages and PR description** to understand *intent* — what should the change do? Verify it actually does that.
 
-5. Output a brief summary: "Analyzing N files changed across M commits. Found K documentation files to review."
+6. **Check TODOS.md** (if it exists) for known bugs or issues related to the changed files. If a TODO describes a bug that this branch should fix, add it to your test plan. If you find a new bug during QA that isn't in TODOS.md, note it in the report.
 
----
+7. **Report findings** scoped to the branch changes:
+   - "Changes tested: N pages/routes affected by this branch"
+   - For each: does it work? Screenshot evidence.
+   - Any regressions on adjacent pages?
 
-## Step 2: Per-File Documentation Audit
+**If the user provides a URL with diff-aware mode:** Use that URL as the base but still scope testing to the changed files.
 
-Read each documentation file and cross-reference it against the diff. Use these generic heuristics
-(adapt to whatever project you're in — these are not gstack-specific):
+### Full (default when URL is provided)
+Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
 
-**README.md:**
-- Does it describe all features and capabilities visible in the diff?
-- Are install/setup instructions consistent with the changes?
-- Are examples, demos, and usage descriptions still valid?
-- Are troubleshooting steps still accurate?
+### Quick (`--quick`)
+30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce health score. No detailed issue documentation.
 
-**ARCHITECTURE.md:**
-- Do ASCII diagrams and component descriptions match the current code?
-- Are design decisions and "why" explanations still accurate?
-- Be conservative — only update things clearly contradicted by the diff. Architecture docs
-  describe things unlikely to change frequently.
-
-**CONTRIBUTING.md — New contributor smoke test:**
-- Walk through the setup instructions as if you are a brand new contributor.
-- Are the listed commands accurate? Would each step succeed?
-- Do test tier descriptions match the current test infrastructure?
-- Are workflow descriptions (dev setup, contributor mode, etc.) current?
-- Flag anything that would fail or confuse a first-time contributor.
-
-**CLAUDE.md / project instructions:**
-- Does the project structure section match the actual file tree?
-- Are listed commands and scripts accurate?
-- Do build/test instructions match what's in package.json (or equivalent)?
-
-**Any other .md files:**
-- Read the file, determine its purpose and audience.
-- Cross-reference against the diff to check if it contradicts anything the file says.
-
-For each file, classify needed updates as:
-
-- **Auto-update** — Factual corrections clearly warranted by the diff: adding an item to a
-  table, updating a file path, fixing a count, updating a project structure tree.
-- **Ask user** — Narrative changes, section removal, security model changes, large rewrites
-  (more than ~10 lines in one section), ambiguous relevance, adding entirely new sections.
+### Regression (`--regression <baseline>`)
+Run full mode, then load `baseline.json` from a previous run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
 
 ---
 
-## Step 3: Apply Auto-Updates
+## Workflow
 
-Make all clear, factual updates directly using the Edit tool.
+### Phase 1: Initialize
 
-For each file modified, output a one-line summary describing **what specifically changed** — not
-just "Updated README.md" but "README.md: added /new-skill to skills table, updated skill count
-from 9 to 10."
+1. Find browse binary (see Setup above)
+2. Create output directories
+3. Copy report template from `qa/templates/qa-report-template.md` to output dir
+4. Start timer for duration tracking
 
-**Never auto-update:**
-- README introduction or project positioning
-- ARCHITECTURE philosophy or design rationale
-- Security model descriptions
-- Do not remove entire sections from any document
+### Phase 2: Authenticate (if needed)
+
+**If the user specified auth credentials:**
+
+```bash
+$B goto <login-url>
+$B snapshot -i                    # find the login form
+$B fill @e3 "user@example.com"
+$B fill @e4 "[REDACTED]"         # NEVER include real passwords in report
+$B click @e5                      # submit
+$B snapshot -D                    # verify login succeeded
+```
+
+**If the user provided a cookie file:**
+
+```bash
+$B cookie-import cookies.json
+$B goto <target-url>
+```
+
+**If 2FA/OTP is required:** Ask the user for the code and wait.
+
+**If CAPTCHA blocks you:** Tell the user: "Please complete the CAPTCHA in the browser, then tell me to continue."
+
+### Phase 3: Orient
+
+Get a map of the application:
+
+```bash
+$B goto <target-url>
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/initial.png"
+$B links                          # map navigation structure
+$B console --errors               # any errors on landing?
+```
+
+**Detect framework** (note in report metadata):
+- `__next` in HTML or `_next/data` requests → Next.js
+- `csrf-token` meta tag → Rails
+- `wp-content` in URLs → WordPress
+- Client-side routing with no page reloads → SPA
+
+**For SPAs:** The `links` command may return few results because navigation is client-side. Use `snapshot -i` to find nav elements (buttons, menu items) instead.
+
+### Phase 4: Explore
+
+Visit pages systematically. At each page:
+
+```bash
+$B goto <page-url>
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
+$B console --errors
+```
+
+Then follow the **per-page exploration checklist** (see `qa/references/issue-taxonomy.md`):
+
+1. **Visual scan** — Look at the annotated screenshot for layout issues
+2. **Interactive elements** — Click buttons, links, controls. Do they work?
+3. **Forms** — Fill and submit. Test empty, invalid, edge cases
+4. **Navigation** — Check all paths in and out
+5. **States** — Empty state, loading, error, overflow
+6. **Console** — Any new JS errors after interactions?
+7. **Responsiveness** — Check mobile viewport if relevant:
+   ```bash
+   $B viewport 375x812
+   $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
+   $B viewport 1280x720
+   ```
+
+**Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
+
+**Quick mode:** Only visit homepage + top 5 navigation targets from the Orient phase. Skip the per-page checklist — just check: loads? Console errors? Broken links visible?
+
+### Phase 5: Document
+
+Document each issue **immediately when found** — don't batch them.
+
+**Two evidence tiers:**
+
+**Interactive bugs** (broken flows, dead buttons, form failures):
+1. Take a screenshot before the action
+2. Perform the action
+3. Take a screenshot showing the result
+4. Use `snapshot -D` to show what changed
+5. Write repro steps referencing screenshots
+
+```bash
+$B screenshot "$REPORT_DIR/screenshots/issue-001-step-1.png"
+$B click @e5
+$B screenshot "$REPORT_DIR/screenshots/issue-001-result.png"
+$B snapshot -D
+```
+
+**Static bugs** (typos, layout issues, missing images):
+1. Take a single annotated screenshot showing the problem
+2. Describe what's wrong
+
+```bash
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
+```
+
+**Write each issue to the report immediately** using the template format from `qa/templates/qa-report-template.md`.
+
+### Phase 6: Wrap Up
+
+1. **Compute health score** using the rubric below
+2. **Write "Top 3 Things to Fix"** — the 3 highest-severity issues
+3. **Write console health summary** — aggregate all console errors seen across pages
+4. **Update severity counts** in the summary table
+5. **Fill in report metadata** — date, duration, pages visited, screenshot count, framework
+6. **Save baseline** — write `baseline.json` with:
+   ```json
+   {
+     "date": "YYYY-MM-DD",
+     "url": "<target>",
+     "healthScore": N,
+     "issues": [{ "id": "ISSUE-001", "title": "...", "severity": "...", "category": "..." }],
+     "categoryScores": { "console": N, "links": N, ... }
+   }
+   ```
+
+**Regression mode:** After writing the report, load the baseline file. Compare:
+- Health score delta
+- Issues fixed (in baseline but not current)
+- New issues (in current but not baseline)
+- Append the regression section to the report
 
 ---
 
-## Step 4: Ask About Risky/Questionable Changes
+## Health Score Rubric
 
-For each risky or questionable update identified in Step 2, use AskUserQuestion with:
-- Context: project name, branch, which doc file, what we're reviewing
-- The specific documentation decision
-- `RECOMMENDATION: Choose [X] because [one-line reason]`
-- Options including C) Skip — leave as-is
+Compute each category score (0-100), then take the weighted average.
 
-Apply approved changes immediately after each answer.
+### Console (weight: 15%)
+- 0 errors → 100
+- 1-3 errors → 70
+- 4-10 errors → 40
+- 10+ errors → 10
 
----
+### Links (weight: 10%)
+- 0 broken → 100
+- Each broken link → -15 (minimum 0)
 
-## Step 5: CHANGELOG Voice Polish
+### Per-Category Scoring (Visual, Functional, UX, Content, Performance, Accessibility)
+Each category starts at 100. Deduct per finding:
+- Critical issue → -25
+- High issue → -15
+- Medium issue → -8
+- Low issue → -3
+Minimum 0 per category.
 
-**CRITICAL — NEVER CLOBBER CHANGELOG ENTRIES.**
+### Weights
+| Category | Weight |
+|----------|--------|
+| Console | 15% |
+| Links | 10% |
+| Visual | 10% |
+| Functional | 20% |
+| UX | 15% |
+| Performance | 10% |
+| Content | 5% |
+| Accessibility | 15% |
 
-This step polishes voice. It does NOT rewrite, replace, or regenerate CHANGELOG content.
-
-A real incident occurred where an agent replaced existing CHANGELOG entries when it should have
-preserved them. This skill must NEVER do that.
-
-**Rules:**
-1. Read the entire CHANGELOG.md first. Understand what is already there.
-2. Only modify wording within existing entries. Never delete, reorder, or replace entries.
-3. Never regenerate a CHANGELOG entry from scratch. The entry was written by `/ship` from the
-   actual diff and commit history. It is the source of truth. You are polishing prose, not
-   rewriting history.
-4. If an entry looks wrong or incomplete, use AskUserQuestion — do NOT silently fix it.
-5. Use Edit tool with exact `old_string` matches — never use Write to overwrite CHANGELOG.md.
-
-**If CHANGELOG was not modified in this branch:** skip this step.
-
-**If CHANGELOG was modified in this branch**, review the entry for voice:
-
-- **Sell test:** Would a user reading each bullet think "oh nice, I want to try that"? If not,
-  rewrite the wording (not the content).
-- Lead with what the user can now **do** — not implementation details.
-- "You can now..." not "Refactored the..."
-- Flag and rewrite any entry that reads like a commit message.
-- Internal/contributor changes belong in a separate "### For contributors" subsection.
-- Auto-fix minor voice adjustments. Use AskUserQuestion if a rewrite would alter meaning.
+### Final Score
+`score = Σ (category_score × weight)`
 
 ---
 
-## Step 6: Cross-Doc Consistency & Discoverability Check
+## Framework-Specific Guidance
 
-After auditing each file individually, do a cross-doc consistency pass:
+### Next.js
+- Check console for hydration errors (`Hydration failed`, `Text content did not match`)
+- Monitor `_next/data` requests in network — 404s indicate broken data fetching
+- Test client-side navigation (click links, don't just `goto`) — catches routing issues
+- Check for CLS (Cumulative Layout Shift) on pages with dynamic content
 
-1. Does the README's feature/capability list match what CLAUDE.md (or project instructions) describes?
-2. Does ARCHITECTURE's component list match CONTRIBUTING's project structure description?
-3. Does CHANGELOG's latest version match the VERSION file?
-4. **Discoverability:** Is every documentation file reachable from README.md or CLAUDE.md? If
-   ARCHITECTURE.md exists but neither README nor CLAUDE.md links to it, flag it. Every doc
-   should be discoverable from one of the two entry-point files.
-5. Flag any contradictions between documents. Auto-fix clear factual inconsistencies (e.g., a
-   version mismatch). Use AskUserQuestion for narrative contradictions.
+### Rails
+- Check for N+1 query warnings in console (if development mode)
+- Verify CSRF token presence in forms
+- Test Turbo/Stimulus integration — do page transitions work smoothly?
+- Check for flash messages appearing and dismissing correctly
 
----
+### WordPress
+- Check for plugin conflicts (JS errors from different plugins)
+- Verify admin bar visibility for logged-in users
+- Test REST API endpoints (`/wp-json/`)
+- Check for mixed content warnings (common with WP)
 
-## Step 7: TODOS.md Cleanup
-
-This is a second pass that complements `/ship`'s Step 5.5. Read `review/TODOS-format.md` (if
-available) for the canonical TODO item format.
-
-If TODOS.md does not exist, skip this step.
-
-1. **Completed items not yet marked:** Cross-reference the diff against open TODO items. If a
-   TODO is clearly completed by the changes in this branch, move it to the Completed section
-   with `**Completed:** vX.Y.Z.W (YYYY-MM-DD)`. Be conservative — only mark items with clear
-   evidence in the diff.
-
-2. **Items needing description updates:** If a TODO references files or components that were
-   significantly changed, its description may be stale. Use AskUserQuestion to confirm whether
-   the TODO should be updated, completed, or left as-is.
-
-3. **New deferred work:** Check the diff for `TODO`, `FIXME`, `HACK`, and `XXX` comments. For
-   each one that represents meaningful deferred work (not a trivial inline note), use
-   AskUserQuestion to ask whether it should be captured in TODOS.md.
-
----
-
-## Step 8: VERSION Bump Question
-
-**CRITICAL — NEVER BUMP VERSION WITHOUT ASKING.**
-
-1. **If VERSION does not exist:** Skip silently.
-
-2. Check if VERSION was already modified on this branch:
-
-```bash
-git diff <base>...HEAD -- VERSION
-```
-
-3. **If VERSION was NOT bumped:** Use AskUserQuestion:
-   - RECOMMENDATION: Choose C (Skip) because docs-only changes rarely warrant a version bump
-   - A) Bump PATCH (X.Y.Z+1) — if doc changes ship alongside code changes
-   - B) Bump MINOR (X.Y+1.0) — if this is a significant standalone release
-   - C) Skip — no version bump needed
-
-4. **If VERSION was already bumped:** Do NOT skip silently. Instead, check whether the bump
-   still covers the full scope of changes on this branch:
-
-   a. Read the CHANGELOG entry for the current VERSION. What features does it describe?
-   b. Read the full diff (`git diff <base>...HEAD --stat` and `git diff <base>...HEAD --name-only`).
-      Are there significant changes (new features, new skills, new commands, major refactors)
-      that are NOT mentioned in the CHANGELOG entry for the current version?
-   c. **If the CHANGELOG entry covers everything:** Skip — output "VERSION: Already bumped to
-      vX.Y.Z, covers all changes."
-   d. **If there are significant uncovered changes:** Use AskUserQuestion explaining what the
-      current version covers vs what's new, and ask:
-      - RECOMMENDATION: Choose A because the new changes warrant their own version
-      - A) Bump to next patch (X.Y.Z+1) — give the new changes their own version
-      - B) Keep current version — add new changes to the existing CHANGELOG entry
-      - C) Skip — leave version as-is, handle later
-
-   The key insight: a VERSION bump set for "feature A" should not silently absorb "feature B"
-   if feature B is substantial enough to deserve its own version entry.
-
----
-
-## Step 9: Commit & Output
-
-**Empty check first:** Run `git status` (never use `-uall`). If no documentation files were
-modified by any previous step, output "All documentation is up to date." and exit without
-committing.
-
-**Commit:**
-
-1. Stage modified documentation files by name (never `git add -A` or `git add .`).
-2. Create a single commit:
-
-```bash
-git commit -m "$(cat <<'EOF'
-docs: update project documentation for vX.Y.Z.W
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-EOF
-)"
-```
-
-3. Push to the current branch:
-
-```bash
-git push
-```
-
-**PR/MR body update (idempotent, race-safe):**
-
-1. Read the existing PR/MR body into a PID-unique tempfile (use the platform detected in Step 0):
-
-**If GitHub:**
-```bash
-gh pr view --json body -q .body > /tmp/gstack-pr-body-$$.md
-```
-
-**If GitLab:**
-```bash
-glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > /tmp/gstack-pr-body-$$.md
-```
-
-2. If the tempfile already contains a `## Documentation` section, replace that section with the
-   updated content. If it does not contain one, append a `## Documentation` section at the end.
-
-3. The Documentation section should include a **doc diff preview** — for each file modified,
-   describe what specifically changed (e.g., "README.md: added /document-release to skills
-   table, updated skill count from 9 to 10").
-
-4. Write the updated body back:
-
-**If GitHub:**
-```bash
-gh pr edit --body-file /tmp/gstack-pr-body-$$.md
-```
-
-**If GitLab:**
-Read the contents of `/tmp/gstack-pr-body-$$.md` using the Read tool, then pass it to `glab mr update` using a heredoc to avoid shell metacharacter issues:
-```bash
-glab mr update -d "$(cat <<'MRBODY'
-<paste the file contents here>
-MRBODY
-)"
-```
-
-5. Clean up the tempfile:
-
-```bash
-rm -f /tmp/gstack-pr-body-$$.md
-```
-
-6. If `gh pr view` / `glab mr view` fails (no PR/MR exists): skip with message "No PR/MR found — skipping body update."
-7. If `gh pr edit` / `glab mr update` fails: warn "Could not update PR/MR body — documentation changes are in the
-   commit." and continue.
-
-**Structured doc health summary (final output):**
-
-Output a scannable summary showing every documentation file's status:
-
-```
-Documentation health:
-  README.md       [status] ([details])
-  ARCHITECTURE.md [status] ([details])
-  CONTRIBUTING.md [status] ([details])
-  CHANGELOG.md    [status] ([details])
-  TODOS.md        [status] ([details])
-  VERSION         [status] ([details])
-```
-
-Where status is one of:
-- Updated — with description of what changed
-- Current — no changes needed
-- Voice polished — wording adjusted
-- Not bumped — user chose to skip
-- Already bumped — version was set by /ship
-- Skipped — file does not exist
+### General SPA (React, Vue, Angular)
+- Use `snapshot -i` for navigation — `links` command misses client-side routes
+- Check for stale state (navigate away and back — does data refresh?)
+- Test browser back/forward — does the app handle history correctly?
+- Check for memory leaks (monitor console after extended use)
 
 ---
 
 ## Important Rules
 
-- **Read before editing.** Always read the full content of a file before modifying it.
-- **Never clobber CHANGELOG.** Polish wording only. Never delete, replace, or regenerate entries.
-- **Never bump VERSION silently.** Always ask. Even if already bumped, check whether it covers the full scope of changes.
-- **Be explicit about what changed.** Every edit gets a one-line summary.
-- **Generic heuristics, not project-specific.** The audit checks work on any repo.
-- **Discoverability matters.** Every doc file should be reachable from README or CLAUDE.md.
-- **Voice: friendly, user-forward, not obscure.** Write like you're explaining to a smart person
-  who hasn't seen the code.
+1. **Repro is everything.** Every issue needs at least one screenshot. No exceptions.
+2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
+3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
+4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
+5. **Never read source code.** Test as a user, not a developer.
+6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
+7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
+8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
+9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
+10. **Use `snapshot -C` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
+11. **Show screenshots to the user.** After every `$B screenshot`, `$B snapshot -a -o`, or `$B responsive` command, use the Read tool on the output file(s) so the user can see them inline. For `responsive` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
+12. **Never refuse to use the browser.** When the user invokes /qa or /qa-only, they are requesting browser-based testing. Never suggest evals, unit tests, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.
+
+---
+
+## Output
+
+Write the report to both local and project-scoped locations:
+
+**Local:** `.gstack/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md`
+
+**Project-scoped:** Write test outcome artifact for cross-session context:
+```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+```
+Write to `~/.gstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+
+### Output Structure
+
+```
+.gstack/qa-reports/
+├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
+├── screenshots/
+│   ├── initial.png                        # Landing page annotated screenshot
+│   ├── issue-001-step-1.png               # Per-issue evidence
+│   ├── issue-001-result.png
+│   └── ...
+└── baseline.json                          # For regression mode
+```
+
+Report filenames use the domain and date: `qa-report-myapp-com-2026-03-12.md`
+
+---
+
+## Additional Rules (qa-only specific)
+
+11. **Never fix bugs.** Find and document only. Do not read source code, edit files, or suggest fixes in the report. Your job is to report what's broken, not to fix it. Use `/qa` for the test-fix-verify loop.
+12. **No test framework detected?** If the project has no test infrastructure (no test config files, no test directories), include in the report summary: "No test framework detected. Run `/qa` to bootstrap one and enable regression test generation."
