@@ -14,6 +14,11 @@ export class ViewController {
     await this.ctx.render('index.html');
   }
 
+  @Get('/roadmap/:appId/:planId')
+  async roadmapDetail() {
+    await this.ctx.render('index.html');
+  }
+
   @Get('/roadmap-*')
   async indexWildcard() {
     await this.ctx.render('index.html');

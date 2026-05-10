@@ -1,0 +1,50 @@
+nodes:
+  - id: start_0
+    type: start
+    data:
+      title: Start
+    blocks: []
+  - id: condition_0
+    type: condition
+    data:
+      title: Split
+    blocks:
+      - id: branch_0
+        type: block
+        data:
+          title: Branch 1
+        blocks:
+          - id: roadmap
+            type: task
+            data:
+              title: Roadmap
+            blocks: []
+          - id: magii
+            type: task
+            data:
+              title: Magii
+            blocks: []
+      - id: branch_ak
+        type: block
+        data:
+          title: Branch Ak
+        blocks:
+          - id: ak
+            type: task
+            data:
+              title: Ak
+            blocks: []
+      - id: branch_1
+        type: block
+        data:
+          title: Branch 2
+        blocks:
+          - id: backstage
+            type: task
+            data:
+              title: Backstage
+            blocks: []
+  - id: end_0
+    type: end
+    data:
+      title: End

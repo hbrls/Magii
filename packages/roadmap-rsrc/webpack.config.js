@@ -56,6 +56,12 @@ config.module
       },
     });
 
+// YAML rule
+config.module
+  .rule('yaml')
+    .test(/\.ya?ml$/)
+    .use('yaml-loader').loader('yaml-loader');
+
 // CSS rule for external packages (node_modules) - no PostCSS processing
 config.module
   .rule('vendor-css')
@@ -121,6 +127,12 @@ conf.devServer = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
     'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization',
+  },
+  historyApiFallback: {
+    rewrites: [
+      { from: /^\/roadmap\/([^/]+)\/([^/]+)$/, to: '/roadmap/index.html' },
+      { from: /./, to: '/roadmap/index.html' },
+    ],
   },
 };
 // console.log(conf);
