@@ -68,7 +68,8 @@ export const TaskNode = () => {
 };
 
 export const EndNode = () => {
-  const { activated, startDrag, onMouseEnter, onMouseLeave } = useNodeRender();
+  const { data, activated, startDrag, onMouseEnter, onMouseLeave } = useNodeRender();
+  const title = data?.title || 'End';
   return (
     <div
       style={{
@@ -93,7 +94,7 @@ export const EndNode = () => {
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      End
+      {title}
     </div>
   );
 };
@@ -182,6 +183,14 @@ export const nodeRegistries = [
       deleteDisable: true,
       copyDisable: true,
       size: { width: 200, height: 50 },
+    },
+    formMeta: {
+      form: {
+        title: {
+          type: 'string',
+          default: 'End'
+        }
+      },
     },
   },
   {

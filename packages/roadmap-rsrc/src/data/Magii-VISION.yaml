@@ -1,0 +1,105 @@
+nodes:
+- id: start_0
+  type: start
+  data:
+    title: Start
+  blocks: []
+- id: condition_p0
+  type: condition
+  data:
+    title: Split
+  blocks:
+  - id: branch_p1
+    type: block
+    data:
+      title: P1 Branch
+    blocks:
+    - id: condition_p1
+      type: condition
+      data:
+        title: Split
+      blocks:
+      - id: branch_p1_1
+        type: block
+        data:
+          title: P1.1 Branch
+        blocks:
+        - id: p1_1
+          type: task
+          data:
+            title: "P1.1: 注册中心能力"
+          blocks: []
+      - id: branch_p1_2
+        type: block
+        data:
+          title: P1.2 Branch
+        blocks:
+        - id: p1_2
+          type: task
+          data:
+            title: "P1.2: 调度中心能力"
+          blocks: []
+      - id: branch_p1_3
+        type: block
+        data:
+          title: P1.3 Branch
+        blocks:
+        - id: p1_3
+          type: task
+          data:
+            title: "P1.3: 自我学习能力"
+          blocks: []
+      - id: branch_p1_4
+        type: block
+        data:
+          title: P1.4 Branch
+        blocks:
+        - id: p1_4
+          type: task
+          data:
+            title: "P1.4: 自我进化能力"
+          blocks: []
+    - id: p1
+      type: task
+      data:
+        title: "P1: 核心系统 MVP 建设"
+      blocks: []
+  - id: branch_p2
+    type: block
+    data:
+      title: P2 Branch
+    blocks:
+    - id: condition_p2
+      type: condition
+      data:
+        title: Split
+      blocks:
+      - id: branch_p2_1
+        type: block
+        data:
+          title: P2.1 Branch
+        blocks:
+        - id: p2_1
+          type: task
+          data:
+            title: "P2.1: Plan 树 DSL Schema 设计"
+          blocks: []
+      - id: branch_p2_2
+        type: block
+        data:
+          title: P2.2 Branch
+        blocks:
+        - id: p2_2
+          type: task
+          data:
+            title: "P2.2: Roadmap 接入契约定义"
+          blocks: []
+    - id: p2
+      type: task
+      data:
+        title: "P2: Plan 树 DSL 标准化与外部接入"
+      blocks: []
+- id: p0
+  type: end
+  data:
+    title: "P0: 将 Magii 建设为 AI Agent 工作流的标准定义框架"
