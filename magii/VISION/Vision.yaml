@@ -1,0 +1,52 @@
+P0:
+  name: "将 Magii 建设为 AI Agent 工作流的标准定义框架"
+  parent: null
+  children:
+    - P1
+    - P2
+
+P1:
+  name: "核心系统 MVP 建设"
+  parent: P0
+  children:
+    - P1.1
+    - P1.2
+    - P1.3
+    - P1.4
+
+P1.1:
+  name: "注册中心能力"
+  parent: P1
+  children: []
+
+P1.2:
+  name: "调度中心能力"
+  parent: P1
+  children: []
+
+P1.3:
+  name: "自我学习能力"
+  parent: P1
+  children: []
+
+P1.4:
+  name: "自我进化能力"
+  parent: P1
+  children: []
+
+P2:
+  name: "Plan 树 DSL 标准化与外部接入"
+  parent: P0
+  children:
+    - P2.1
+    - P2.2
+
+P2.1:
+  name: "Plan 树 DSL Schema 设计"
+  parent: P2
+  children: []
+
+P2.2:
+  name: "Roadmap 接入契约定义"
+  parent: P2
+  children: []
